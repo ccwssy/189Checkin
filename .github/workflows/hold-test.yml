@@ -1,21 +1,14 @@
 name: hold-test
+# 验证用：加固版签到 workflow，仅手动触发一次，用来判断 GitHub 风控是否仍会扣留
 # 加固要点：
 # 1. 去掉全部第三方 action（secrets-to-env / retry / delete-workflow-runs），改为内联 run
-# 2. 官方 action 全部按 commit SHA 固定，不用 @main / @master / @v4 浮动引用
-# 3. 删掉自推送 "Keep Running" 步骤（remote URL 内嵌 token + 自触发循环，风控强信号）
+# 2. 官方 action 按 commit SHA 固定，不用 @main / @master / @v4 浮动引用
+# 3. 删掉自推送 "Keep Running"（remote URL 内嵌 token + 自触发循环，风控强信号）
 # 4. 显式 permissions: contents: read
 on:
   workflow_dispatch:
-permissions: contents: read
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: 35 2 * * *
 permissions:
   contents: read
-concurrency:
-  group: cloud189-checkin
-  cancel-in-progress: false
 jobs:
   checkin:
     runs-on: ubuntu-latest
@@ -43,12 +36,5 @@ jobs:
       - name: Install dependencies
         run: npm install --omit=dev
 
-      - name: Check in (retry up to 3)
-        run: |
-          for i in 1 2 3; do
-            if npm start; then exit 0; fi
-            echo "::warning::签到第 $i 次失败，30 秒后重试"
-            sleep 30
-          done
-          echo "::error::签到连续 3 次失败"
-          exit 1
+      - name: Check in
+        run: npm start
