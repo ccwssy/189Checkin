@@ -20,3 +20,9 @@ cheese.log
 .token
 
 .logs
+
+# 凭证文件：绝不入库。账号密码走 environment secret TY_ACCOUNTS，
+# 由 workflow 直接注入环境变量，不经 .env 文件。
+.env
+.env.*
+!.env.example
