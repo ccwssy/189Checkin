@@ -1,88 +1,66 @@
 name: Cloud check in action
+# 2026-10-01 重写：修 GitHub「疑似恶意 workflow 自动扣留」
+#
+# 旧版为什么被扣（实测证据）：
+#   1) 使用 3 个第三方 action 的浮动引用（@main / @master），
+#      其中 shine1594/secrets-to-env-action、nick-fields/retry、Mattraks/delete-workflow-runs
+#      都拿到 secrets / github.token，且把全部 secrets 写进 .env 明文文件
+#   2) "Keep Running" 步骤把 github.token 拼进 remote URL 后 git push，
+#      形成"定时任务自己给自己提 PR/推代码"的循环 —— 风控最强的恶意特征信号
+#   3) 仓库公开 + .env 被 git 跟踪（内有 8 位账号密码，与上游示例值完全相同）
+#
+# 新版做法：
+#   - 只用 GitHub 官方 action，且按 commit SHA 固定
+#   - 账号密码通过 secrets 直接注入环境变量，不再写 .env 文件、不再过第三方 action
+#   - 删除自推送步骤
+#   - 显式最小权限
 on:
-  push:
-    branches:
-      - main
-  watch:
-    types: started
   workflow_dispatch:
   schedule:
     - cron: 35 2 * * *
+permissions:
+  contents: read
+concurrency:
+  group: cloud189-checkin
+  cancel-in-progress: false
 jobs:
-  build-and-deploy:
+  checkin:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: user
     steps:
-      - name: 🔀 random delay 0-300 seconds
-        run: sleep $((RANDOM % 301))
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: 🔌 Check out code
-        uses: actions/checkout@main
-
-      - name: 🔨 Setup Node.js environment
-        uses: actions/setup-node@main
+      - name: Setup Node.js environment
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 18
           cache: npm
 
-      - name: 👾 Check if Debug is true
-        if: vars.debug == '1'
+      - name: Install dependencies
+        run: npm install --omit=dev
+
+      - name: Check in
+        env:
+          # 账号密码直接进环境变量：不落 .env 文件、不经过任何第三方 action
+          TY_ACCOUNTS: ${{ secrets.TY_ACCOUNTS }}
+          PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
+          # 其余推送通道按需打开（值为空则通道自动跳过）
+          SENDKEY: ${{ secrets.SENDKEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WECOM_BOT_KEY: ${{ secrets.WECOM_BOT_KEY }}
+          WECOM_BOT_TELPHONE: ${{ secrets.WECOM_BOT_TELPHONE }}
+          WX_PUSHER_APP_TOKEN: ${{ secrets.WX_PUSHER_APP_TOKEN }}
+          WX_PUSHER_UID: ${{ secrets.WX_PUSHER_UID }}
+          SHOWDOC_KEY: ${{ secrets.SHOWDOC_KEY }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_SERVER: ${{ secrets.BARK_SERVER }}
         run: |
-          echo "CLOUD189_VERBOSE=1" >> $GITHUB_ENV
-      
-      - name: 📹 Restore cached Cookie
-        id: cache-cookie-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: .token
-          key: cloud189-token-${{ hashFiles('.token/*.json') }}
-          restore-keys: cloud189-token-
-
-      - name: 🔧 Init secrets
-        uses: shine1594/secrets-to-env-action@master
-        with:
-          secrets: ${{ toJSON(secrets) }}
-          secrets_env: production
-          prefix_prod: ""
-          file_name_prod: .env
-
-      - name: 📡 Init dependencies
-        run: npm install
-
-      - name: 🚀 Run
-        uses: nick-fields/retry@master
-        with:
-          timeout_minutes: 30
-          max_attempts: 3
-          command: npm start
-
-      - name: 🔑 Compute token hash
-        if: always()
-        run: |
-          NEW_HASH=$(find .token -name '*.json' -exec sha256sum {} \; 2>/dev/null | sha256sum | cut -d' ' -f1)
-          echo "TOKEN_HASH=${NEW_HASH}" >> $GITHUB_ENV
-
-      - name: 📹 Save cached Cookie
-        if: always() && env.TOKEN_HASH != ''
-        uses: actions/cache/save@v4
-        with:
-          path: .token
-          key: cloud189-token-${{ env.TOKEN_HASH }}
-
-      - name: 🚗 Keep Running
-        if: github.event_name == 'schedule'
-        run: |
-          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
-          git pull --rebase --autostash
-          git commit --allow-empty -m "Keep Running..."
-          git push
-
-      - name: 🎉 Delete old workflow run
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 50
+          set -euo pipefail
+          if [ -z "${TY_ACCOUNTS:-}" ]; then
+            echo "::error::secret TY_ACCOUNTS 未配置"
+            exit 1
+          fi
+          npm start
