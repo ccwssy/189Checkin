@@ -63,4 +63,9 @@ jobs:
             echo "::error::secret TY_ACCOUNTS 未配置"
             exit 1
           fi
+          # 兼容 secret 里手抄进来的引号：历史 TY_ACCOUNTS 存的是 '...' 形式
+          export TY_ACCOUNTS="${TY_ACCOUNTS%\'}"; export TY_ACCOUNTS="${TY_ACCOUNTS#\'}"
+          export TY_ACCOUNTS="${TY_ACCOUNTS%\"}"; export TY_ACCOUNTS="${TY_ACCOUNTS#\"}"
+          node -e 'JSON.parse(process.env.TY_ACCOUNTS)' \
+            || { echo "::error::TY_ACCOUNTS 不是合法 JSON（请检查 secret 是否多引号/换行）"; exit 1; }
           npm start
