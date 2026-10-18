@@ -26,3 +26,9 @@ cheese.log
 .env
 .env.*
 !.env.example
+# 内部产物：不进公开仓（详见 skill public-repo-hygiene）
+AGENTS.md
+CLAUDE.md
+docs/*-prompt.md
+log/
+.dsh-*
